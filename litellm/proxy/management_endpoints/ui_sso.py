@@ -86,7 +86,13 @@ from litellm.proxy._types import (
     TeamMemberAddRequest,
     UserAPIKeyAuth,
 )
-from litellm.proxy.auth.auth_checks import ExperimentalUIJWTToken, get_team_object, get_user_object
+from litellm.proxy.auth.auth_checks import (
+    ExperimentalUIJWTToken,
+    email_held_by_another_user,
+    get_team_object,
+    get_user_object,
+    read_email_verified,
+)
 from litellm.proxy.auth.auth_utils import (  # noqa: F401  # legacy module exports
     _get_request_ip_address,  # pyright: ignore[reportPrivateUsage,reportUnusedImport]  # backwards-compatible package export
     get_request_ip_address,
@@ -1389,6 +1395,7 @@ def generic_response_convertor(
         team_id_to_upsert=team_id_to_upsert,
         user_role=user_role,
         extra_fields=extra_fields,
+        email_verified=read_email_verified(token.get("email_verified")),
     )
 
 
@@ -1973,11 +1980,13 @@ async def get_existing_user_info_from_db(
     user_api_key_cache: UserApiKeyCache,
     proxy_logging_obj: ProxyLogging,
     raise_database_outage: bool = False,
+    email_verified: bool | None = None,
 ) -> LiteLLM_UserTable | None:
     try:
         user_info = await get_user_object(
             user_id=user_id,
             user_email=user_email,
+            email_verified=email_verified,
             prisma_client=prisma_client,
             user_api_key_cache=user_api_key_cache,
             user_id_upsert=False,
@@ -2027,6 +2036,9 @@ async def get_user_info_from_db(
         )
 
         user_info: LiteLLM_UserTable | NewUserResponse | None = None
+        email_verified: Final = read_email_verified(
+            _sso_result_to_dict(result).get("email_verified")  # pyright: ignore[reportUnknownArgumentType]  # untyped IdP dict
+        )
 
         for user_id in potential_user_ids:
             user_info = await get_existing_user_info_from_db(
@@ -2036,6 +2048,7 @@ async def get_user_info_from_db(
                 user_api_key_cache=user_api_key_cache,
                 proxy_logging_obj=proxy_logging_obj,
                 raise_database_outage=resolved_by_database_only,
+                email_verified=email_verified,
             )
             if user_info is not None:
                 break
@@ -2044,12 +2057,24 @@ async def get_user_info_from_db(
             "user_info: %s; litellm.default_internal_user_params: %s", user_info, litellm.default_internal_user_params
         )
 
+        email_taken: Final = (
+            user_info is None
+            and user_email is not None
+            and user_defined_values is not None
+            and await email_held_by_another_user(prisma_client, user_email, user_defined_values["user_id"])
+        )
+        new_user_values: Final[SSOUserDefinedValues | None] = (
+            {**user_defined_values, "user_email": None}
+            if email_taken and user_defined_values is not None
+            else user_defined_values
+        )
+
         # Upsert SSO User to LiteLLM DB
         user_info = await SSOAuthenticationHandler.upsert_sso_user(
             result=result,
             user_info=user_info,
-            user_email=user_email,
-            user_defined_values=user_defined_values,
+            user_email=None if email_taken else user_email,
+            user_defined_values=new_user_values,
             prisma_client=prisma_client,
             raise_database_outage=resolved_by_database_only,
         )

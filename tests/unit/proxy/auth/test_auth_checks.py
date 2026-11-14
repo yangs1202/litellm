@@ -1295,7 +1295,7 @@ async def test_can_user_call_model_with_no_default_models():
 
 
 @pytest.mark.asyncio
-async def test_get_fuzzy_user_object():
+async def test_get_fuzzy_user_object() -> None:
     from litellm.proxy.auth.auth_checks import _get_fuzzy_user_object
     from unittest.mock import AsyncMock, MagicMock
 
@@ -1324,8 +1324,9 @@ async def test_get_fuzzy_user_object():
     )
 
     # Test 2: SSO ID not found, find by email
+    unlinked_user = test_user.model_copy(update={"sso_user_id": None})
     mock_prisma.db.litellm_usertable.find_unique = AsyncMock(return_value=None)
-    mock_prisma.db.litellm_usertable.find_first = AsyncMock(return_value=test_user)
+    mock_prisma.db.litellm_usertable.find_first = AsyncMock(return_value=unlinked_user)
     mock_prisma.db.litellm_usertable.update = AsyncMock()
 
     result = await _get_fuzzy_user_object(
@@ -1333,7 +1334,7 @@ async def test_get_fuzzy_user_object():
         sso_user_id="new_sso_456",
         user_email="test@example.com",
     )
-    assert result == test_user
+    assert result == unlinked_user
     mock_prisma.db.litellm_usertable.find_first.assert_called_with(
         where={"user_email": {"equals": "test@example.com", "mode": "insensitive"}},
         include={"organization_memberships": True},

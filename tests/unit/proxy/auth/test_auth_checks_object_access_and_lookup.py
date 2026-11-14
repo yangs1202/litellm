@@ -1276,7 +1276,7 @@ async def test_get_user_object_upsert_includes_user_email():
 
 
 @pytest.mark.asyncio
-async def test_get_user_object_backfills_null_email_from_cache_hit():
+async def test_get_user_object_backfills_null_email_from_cache_hit() -> None:
     """
     Regression (LIT-4710): an existing user row with a null user_email must be
     backfilled from the JWT-provided email even when served from cache, so the
@@ -1290,6 +1290,7 @@ async def test_get_user_object_backfills_null_email_from_cache_hit():
 
     mock_prisma_client = MagicMock()
     mock_prisma_client.db.litellm_usertable.update_many = AsyncMock(return_value=1)
+    mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
     mock_prisma_client.db.litellm_usertable.find_unique = AsyncMock(
         return_value=LiteLLM_UserTable(
             user_id="jwt-user-1",
@@ -1391,7 +1392,7 @@ async def test_get_user_object_does_not_overwrite_existing_email():
 
 
 @pytest.mark.asyncio
-async def test_get_user_object_backfill_race_prefers_db_email():
+async def test_get_user_object_backfill_race_prefers_db_email() -> None:
     """
     LIT-4710 race guard: when the null-guarded update matches 0 rows because a
     concurrent writer already backfilled an email, the cache must be refreshed
@@ -1408,6 +1409,7 @@ async def test_get_user_object_backfill_race_prefers_db_email():
     )
     mock_prisma_client = MagicMock()
     mock_prisma_client.db.litellm_usertable.update_many = AsyncMock(return_value=0)
+    mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
     mock_prisma_client.db.litellm_usertable.find_unique = AsyncMock(return_value=winner_row)
 
     result = await get_user_object(
@@ -1428,7 +1430,7 @@ async def test_get_user_object_backfill_race_prefers_db_email():
 
 
 @pytest.mark.asyncio
-async def test_get_user_object_backfill_caches_persisted_email_not_proposed():
+async def test_get_user_object_backfill_caches_persisted_email_not_proposed() -> None:
     """
     LIT-4710 cache-coherence: even when the null-guarded update succeeds, the
     cache must be refreshed from the row the DB actually holds, not this
@@ -1447,6 +1449,7 @@ async def test_get_user_object_backfill_caches_persisted_email_not_proposed():
     )
     mock_prisma_client = MagicMock()
     mock_prisma_client.db.litellm_usertable.update_many = AsyncMock(return_value=1)
+    mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
     mock_prisma_client.db.litellm_usertable.find_unique = AsyncMock(return_value=persisted_row)
 
     result = await get_user_object(

@@ -1959,6 +1959,7 @@ async def test_get_user_info_from_db_user_not_exists_creates_user():
     from litellm.proxy.management_endpoints.ui_sso import get_user_info_from_db
 
     prisma_client = MagicMock()
+    prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
     user_api_key_cache = MagicMock()
     proxy_logging_obj = MagicMock()
     user_email = "newuser@example.com"
